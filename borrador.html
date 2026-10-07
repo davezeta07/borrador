@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Borrador — quita el fondo o borra objetos de tus fotos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #120D0D;
+    --surface: #1F1614;
+    --surface-2: #2A1D19;
+    --accent: #C1442D;
+    --accent-soft: rgba(193,68,45,0.18);
+    --text: #F2E8E4;
+    --muted: #9C8880;
+    --line: #34241F;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);min-height:100%;}
+  body{
+    display:flex; flex-direction:column; align-items:center;
+    padding: 48px 20px 80px;
+  }
+  .wrap{width:100%; max-width:760px;}
+
+  header{ margin-bottom:32px; }
+  .brand{
+    font-family:'Fraunces', serif;
+    font-weight:500;
+    font-size: clamp(2.4rem, 6vw, 3.4rem);
+    letter-spacing:-0.01em;
+    margin:0;
+    color:var(--text);
+  }
+  .brand em{ color: var(--accent); font-style: italic; }
+  .tagline{
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 1.02rem;
+    max-width: 46ch;
+    line-height:1.5;
+  }
+
+  .mode-toggle{ display:flex; gap:8px; margin: 28px 0 24px; }
+  .mode-btn{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:0.9rem;
+    padding: 10px 18px;
+    border-radius:3px;
+    border:1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    cursor:pointer;
+  }
+  .mode-btn.active{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #1a0e0a;
+    font-weight:600;
+  }
+
+  .stage{
+    position:relative;
+    border:1px solid var(--line);
+    background: var(--surface);
+    border-radius:4px;
+    min-height: 380px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    transition: border-color .2s ease;
+  }
+  .stage.drag{ border-color: var(--accent); }
+  .stage.empty{ cursor:pointer; }
+  .drop-hint{
+    text-align:center;
+    color: var(--muted);
+    padding: 40px;
+  }
+  .drop-hint .glyph{
+    width:46px; height:46px; margin:0 auto 18px;
+    border:1px solid var(--muted);
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:1.3rem;
+    color: var(--muted);
+  }
+  .drop-hint p{ margin:4px 0; font-size:0.98rem; }
+  .drop-hint .small{ font-size:0.82rem; opacity:0.75; }
+
+  input[type=file]{ display:none; }
+
+  .compare{
+    position:absolute; inset:0;
+    background-image:
+      linear-gradient(45deg, #2a1f1c 25%, transparent 25%),
+      linear-gradient(-45deg, #2a1f1c 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2a1f1c 75%),
+      linear-gradient(-45deg, transparent 75%, #2a1f1c 75%);
+    background-size: 22px 22px;
+    background-position: 0 0, 0 11px, 11px -11px, -11px 0px;
+    background-color:#1a1310;
+  }
+  .compare img{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+    display:block;
+  }
+  .compare .before{ filter: saturate(0.85); }
+
+  .slider-line{
+    position:absolute; top:0; bottom:0; width:2px; background:var(--accent);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+    pointer-events:none;
+  }
+  .slider-handle{
+    position:absolute; top:50%; width:34px; height:34px; margin-left:-17px; margin-top:-17px;
+    background: var(--accent); border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    color:#1a0e0a; font-size:0.8rem; cursor: ew-resize;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+  }
+  .range-input{
+    position:absolute; inset:0; width:100%; height:100%;
+    opacity:0; cursor: ew-resize; margin:0;
+  }
+
+  .canvas-wrap{
+    position:relative; width:100%;
+    border:1px solid var(--line); border-radius:4px;
+    overflow:hidden; background:var(--surface);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .canvas-wrap canvas{ display:block; max-width:100%; height:auto; }
+  #objMaskCanvas{ position:absolute; inset:0; width:100%; height:100%; cursor:crosshair; touch-action:none; }
+
+  .brush-row{
+    display:flex; align-items:center; gap:12px;
+    margin-top:16px; font-size:0.85rem; color:var(--muted);
+  }
+  .brush-row input[type=range]{ flex:1; accent-color:var(--accent); }
+
+  .status-overlay{
+    position:absolute; inset:0;
+    background: rgba(18,13,13,0.86);
+    display:flex; align-items:center; justify-content:center; flex-direction:column;
+    gap:14px; text-align:center; padding:20px;
+  }
+  .status-overlay.hidden{ display:none; }
+  .spinner{
+    width:28px; height:28px; border-radius:50%;
+    border: 2px solid var(--line);
+    border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+  .status-text{ color: var(--muted); font-size:0.92rem; letter-spacing:0.01em; max-width:38ch; }
+
+  .controls{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:16px; margin-top:22px; flex-wrap:wrap;
+  }
+  .controls .left-labels{ display:flex; gap:22px; font-size:0.82rem; color:var(--muted); flex-wrap:wrap; }
+  .controls .left-labels span b{ color:var(--text); font-weight:500; }
+
+  .btn{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:0.92rem;
+    padding: 11px 22px;
+    border-radius:3px;
+    border:1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    cursor:pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .btn:hover{ border-color: var(--accent); }
+  .btn.primary{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #1a0e0a;
+    font-weight:600;
+  }
+  .btn.primary:hover{ opacity:0.92; }
+  .btn:disabled{ opacity:0.4; cursor:not-allowed; }
+  .btn-row{ display:flex; gap:10px; flex-wrap:wrap; }
+
+  footer{
+    margin-top:44px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    text-align:center;
+    max-width: 46ch;
+    line-height:1.6;
+  }
+  footer b{ color: var(--text); }
+
+  .error-box{
+    margin-top:16px; padding:12px 16px;
+    border:1px solid var(--accent); border-radius:3px;
+    background: var(--accent-soft);
+    color: var(--text); font-size:0.88rem;
+    display:none;
+  }
+
+  .panel{ position:relative; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 class="brand">Borra<em>dor</em></h1>
+    <p class="tagline">Quita el fondo o borra objetos de una foto sin subirla a ningún lado. Todo se procesa dentro de tu navegador, gratis y sin marca de agua.</p>
+  </header>
+
+  <div class="mode-toggle">
+    <button id="modeBg" class="mode-btn active">Quitar fondo</button>
+    <button id="modeObj" class="mode-btn">Borrar objeto</button>
+  </div>
+
+  <!-- ===================== PANEL: QUITAR FONDO ===================== -->
+  <div id="panelBg" class="panel">
+    <div id="stage" class="stage empty">
+      <div id="dropHint" class="drop-hint">
+        <div class="glyph">＋</div>
+        <p>Arrastra una foto aquí, o haz clic para elegir una</p>
+        <p class="small">JPG o PNG · nada se envía a un servidor</p>
+      </div>
+
+      <div id="compare" class="compare" style="display:none;">
+        <img id="imgBefore" class="before" alt="Foto original">
+        <img id="imgAfter" class="after" alt="Resultado sin fondo">
+        <div id="sliderLine" class="slider-line" style="left:50%;"></div>
+        <div id="sliderHandle" class="slider-handle" style="left:50%;">↔</div>
+        <input id="rangeInput" class="range-input" type="range" min="0" max="100" value="50">
+      </div>
+
+      <div id="statusOverlay" class="status-overlay hidden">
+        <div class="spinner"></div>
+        <div id="statusText" class="status-text">Revelando…</div>
+      </div>
+    </div>
+
+    <input id="fileInput" type="file" accept="image/png, image/jpeg">
+
+    <div class="controls">
+      <div class="left-labels">
+        <span><b>1</b> — elige foto</span>
+        <span><b>2</b> — espera el proceso</span>
+        <span><b>3</b> — descarga el PNG</span>
+      </div>
+      <div class="btn-row">
+        <button id="btnAnother" class="btn" style="display:none;">Otra foto</button>
+        <button id="btnDownload" class="btn primary" style="display:none;">Descargar PNG</button>
+      </div>
+    </div>
+
+    <div id="errorBox" class="error-box"></div>
+  </div>
+
+  <!-- ===================== PANEL: BORRAR OBJETO ===================== -->
+  <div id="panelObj" class="panel" style="display:none;">
+    <div id="objEmpty" class="stage empty">
+      <div class="drop-hint">
+        <div class="glyph">＋</div>
+        <p>Arrastra una foto aquí, o haz clic para elegir una</p>
+        <p class="small">JPG o PNG · el modelo pesa ~200 MB la primera vez</p>
+      </div>
+    </div>
+
+    <div id="objEditor" style="display:none;">
+      <div class="canvas-wrap">
+        <canvas id="objCanvas"></canvas>
+        <canvas id="objMaskCanvas"></canvas>
+        <div id="objStatusOverlay" class="status-overlay hidden">
+          <div class="spinner"></div>
+          <div id="objStatusText" class="status-text">Borrando…</div>
+        </div>
+      </div>
+      <div class="brush-row">
+        <label for="brushSize">Tamaño de pincel</label>
+        <input id="brushSize" type="range" min="10" max="90" value="35">
+        <button id="btnClearMask" class="btn">Borrar marca</button>
+      </div>
+    </div>
+
+    <input id="objFileInput" type="file" accept="image/png, image/jpeg">
+
+    <div class="controls">
+      <div class="left-labels">
+        <span><b>1</b> — elige foto</span>
+        <span><b>2</b> — pinta el objeto</span>
+        <span><b>3</b> — borra y descarga</span>
+      </div>
+      <div class="btn-row">
+        <button id="objBtnAnother" class="btn" style="display:none;">Otra foto</button>
+        <button id="objBtnRun" class="btn primary" style="display:none;">Borrar objeto</button>
+        <button id="objBtnDownload" class="btn primary" style="display:none;">Descargar PNG</button>
+      </div>
+    </div>
+
+    <div id="objErrorBox" class="error-box"></div>
+  </div>
+
+  <footer>
+    <b>Cómo funciona:</b> los modelos de IA se descargan una sola vez en tu navegador y hacen todo el trabajo ahí mismo. Tu foto nunca sale de tu computadora.
+  </footer>
+</div>
+
+<!-- ONNX Runtime, para el borrado de objetos -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+
+<script type="module">
+  import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6";
+
+  /* ---------- MODE TOGGLE ---------- */
+  const modeBg = document.getElementById('modeBg');
+  const modeObj = document.getElementById('modeObj');
+  const panelBg = document.getElementById('panelBg');
+  const panelObj = document.getElementById('panelObj');
+  modeBg.addEventListener('click', () => {
+    modeBg.classList.add('active'); modeObj.classList.remove('active');
+    panelBg.style.display = 'block'; panelObj.style.display = 'none';
+  });
+  modeObj.addEventListener('click', () => {
+    modeObj.classList.add('active'); modeBg.classList.remove('active');
+    panelObj.style.display = 'block'; panelBg.style.display = 'none';
+  });
+
+  /* ======================================================
+     PANEL 1 — QUITAR FONDO
+  ====================================================== */
+  const stage = document.getElementById('stage');
+  const dropHint = document.getElementById('dropHint');
+  const compare = document.getElementById('compare');
+  const imgBefore = document.getElementById('imgBefore');
+  const imgAfter = document.getElementById('imgAfter');
+  const sliderLine = document.getElementById('sliderLine');
+  const sliderHandle = document.getElementById('sliderHandle');
+  const rangeInput = document.getElementById('rangeInput');
+  const statusOverlay = document.getElementById('statusOverlay');
+  const statusText = document.getElementById('statusText');
+  const fileInput = document.getElementById('fileInput');
+  const btnDownload = document.getElementById('btnDownload');
+  const btnAnother = document.getElementById('btnAnother');
+  const errorBox = document.getElementById('errorBox');
+
+  let resultURL = null;
+  let segmenter = null;
+
+  async function getSegmenter(onProgress){
+    if (segmenter) return segmenter;
+    segmenter = await pipeline('background-removal', 'Xenova/modnet', {
+      dtype: 'fp32',
+      progress_callback: onProgress
+    });
+    return segmenter;
+  }
+
+  function setClipFromPercent(pct){
+    imgAfter.style.clipPath = `inset(0 0 0 ${pct}%)`;
+    imgBefore.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+    sliderLine.style.left = pct + '%';
+    sliderHandle.style.left = pct + '%';
+  }
+  rangeInput.addEventListener('input', () => setClipFromPercent(rangeInput.value));
+
+  stage.addEventListener('click', () => {
+    if (stage.classList.contains('empty')) fileInput.click();
+  });
+  ['dragenter','dragover'].forEach(evt => {
+    stage.addEventListener(evt, e => { e.preventDefault(); stage.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(evt => {
+    stage.addEventListener(evt, e => { e.preventDefault(); stage.classList.remove('drag'); });
+  });
+  stage.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  fileInput.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (f) handleFile(f);
+  });
+
+  btnAnother.addEventListener('click', () => {
+    resultURL = null;
+    fileInput.value = '';
+    dropHint.style.display = 'block';
+    compare.style.display = 'none';
+    btnDownload.style.display = 'none';
+    btnAnother.style.display = 'none';
+    stage.classList.add('empty');
+    errorBox.style.display = 'none';
+  });
+
+  btnDownload.addEventListener('click', () => {
+    if (!resultURL) return;
+    const a = document.createElement('a');
+    a.href = resultURL;
+    a.download = 'sin-fondo.png';
+    a.click();
+  });
+
+  async function handleFile(file){
+    errorBox.style.display = 'none';
+    dropHint.style.display = 'none';
+    compare.style.display = 'block';
+    stage.classList.remove('empty');
+    statusOverlay.classList.remove('hidden');
+    statusText.textContent = 'Cargando el modelo…';
+    btnDownload.style.display = 'none';
+    btnAnother.style.display = 'none';
+
+    const originalURL = URL.createObjectURL(file);
+    imgBefore.src = originalURL;
+    imgAfter.src = originalURL;
+    setClipFromPercent(50);
+
+    try {
+      const pipe = await getSegmenter((p) => {
+        if (p.status === 'progress' && p.progress != null) {
+          statusText.textContent = `Descargando el modelo… ${Math.round(p.progress)}%`;
+        } else {
+          statusText.textContent = 'Cargando el modelo…';
+        }
+      });
+      statusText.textContent = 'Revelando…';
+      const output = await pipe(originalURL);
+      const blob = await output[0].toBlob();
+      resultURL = URL.createObjectURL(blob);
+      imgAfter.src = resultURL;
+      statusOverlay.classList.add('hidden');
+      btnDownload.style.display = 'inline-block';
+      btnAnother.style.display = 'inline-block';
+    } catch (err) {
+      console.error(err);
+      statusOverlay.classList.add('hidden');
+      errorBox.textContent = 'Algo salió mal procesando la foto. Probá con otra imagen o recargá la página.';
+      errorBox.style.display = 'block';
+      btnAnother.style.display = 'inline-block';
+    }
+  }
+
+  /* ======================================================
+     PANEL 2 — BORRAR OBJETO (LaMa inpainting)
+  ====================================================== */
+  const MODEL_URL = 'https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx';
+
+  const objEmpty = document.getElementById('objEmpty');
+  const objEditor = document.getElementById('objEditor');
+  const objCanvas = document.getElementById('objCanvas');
+  const objMaskCanvas = document.getElementById('objMaskCanvas');
+  const objCtx = objCanvas.getContext('2d');
+  const maskCtx = objMaskCanvas.getContext('2d');
+  const objFileInput = document.getElementById('objFileInput');
+  const brushSize = document.getElementById('brushSize');
+  const btnClearMask = document.getElementById('btnClearMask');
+  const objBtnRun = document.getElementById('objBtnRun');
+  const objBtnDownload = document.getElementById('objBtnDownload');
+  const objBtnAnother = document.getElementById('objBtnAnother');
+  const objStatusOverlay = document.getElementById('objStatusOverlay');
+  const objStatusText = document.getElementById('objStatusText');
+  const objErrorBox = document.getElementById('objErrorBox');
+
+  let objImage = null;
+  let objResultURL = null;
+  let ortSession = null;
+
+  async function getOrtSession(){
+    if (ortSession) return ortSession;
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+    ortSession = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] });
+    return ortSession;
+  }
+
+  objEmpty.addEventListener('click', () => objFileInput.click());
+  ['dragenter','dragover'].forEach(evt => {
+    objEmpty.addEventListener(evt, e => { e.preventDefault(); objEmpty.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(evt => {
+    objEmpty.addEventListener(evt, e => { e.preventDefault(); objEmpty.classList.remove('drag'); });
+  });
+  objEmpty.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) loadObjFile(f);
+  });
+  objFileInput.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (f) loadObjFile(f);
+  });
+
+  function loadObjFile(file){
+    const img = new Image();
+    img.onload = () => {
+      objImage = img;
+      const maxW = 700;
+      const scale = Math.min(1, maxW / img.naturalWidth);
+      const dispW = Math.round(img.naturalWidth * scale);
+      const dispH = Math.round(img.naturalHeight * scale);
+      objCanvas.width = dispW; objCanvas.height = dispH;
+      objMaskCanvas.width = dispW; objMaskCanvas.height = dispH;
+      objCtx.clearRect(0,0,dispW,dispH);
+      objCtx.drawImage(img, 0, 0, dispW, dispH);
+      maskCtx.clearRect(0,0,dispW,dispH);
+
+      objEmpty.style.display = 'none';
+      objEditor.style.display = 'block';
+      objBtnRun.style.display = 'inline-block';
+      objBtnAnother.style.display = 'inline-block';
+      objBtnDownload.style.display = 'none';
+      objErrorBox.style.display = 'none';
+      objResultURL = null;
+    };
+    img.src = URL.createObjectURL(file);
+  }
+
+  let painting = false;
+  function getPos(e){
+    const rect = objMaskCanvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const scaleX = objMaskCanvas.width / rect.width;
+    const scaleY = objMaskCanvas.height / rect.height;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  }
+  function paintAt(x, y){
+    maskCtx.fillStyle = 'rgba(193,68,45,0.55)';
+    maskCtx.beginPath();
+    maskCtx.arc(x, y, Number(brushSize.value) / 2, 0, Math.PI * 2);
+    maskCtx.fill();
+  }
+  function startPaint(e){ if (!objImage) return; e.preventDefault(); painting = true; const p = getPos(e); paintAt(p.x, p.y); }
+  function movePaint(e){ if (!painting) return; e.preventDefault(); const p = getPos(e); paintAt(p.x, p.y); }
+  function endPaint(){ painting = false; }
+  objMaskCanvas.addEventListener('mousedown', startPaint);
+  objMaskCanvas.addEventListener('mousemove', movePaint);
+  window.addEventListener('mouseup', endPaint);
+  objMaskCanvas.addEventListener('touchstart', startPaint, { passive:false });
+  objMaskCanvas.addEventListener('touchmove', movePaint, { passive:false });
+  objMaskCanvas.addEventListener('touchend', endPaint);
+
+  btnClearMask.addEventListener('click', () => {
+    maskCtx.clearRect(0, 0, objMaskCanvas.width, objMaskCanvas.height);
+  });
+
+  objBtnAnother.addEventListener('click', () => {
+    objImage = null;
+    objResultURL = null;
+    objFileInput.value = '';
+    objEditor.style.display = 'none';
+    objEmpty.style.display = 'flex';
+    objBtnRun.style.display = 'none';
+    objBtnAnother.style.display = 'none';
+    objBtnDownload.style.display = 'none';
+    objErrorBox.style.display = 'none';
+  });
+
+  objBtnDownload.addEventListener('click', () => {
+    if (!objResultURL) return;
+    const a = document.createElement('a');
+    a.href = objResultURL;
+    a.download = 'sin-objeto.png';
+    a.click();
+  });
+
+  function hasMaskContent(){
+    const data = maskCtx.getImageData(0, 0, objMaskCanvas.width, objMaskCanvas.height).data;
+    for (let i = 3; i < data.length; i += 4) { if (data[i] > 0) return true; }
+    return false;
+  }
+
+  function getMaskBBox(ctx, w, h){
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = 0, maxY = 0, found = false;
+    for (let y = 0; y < h; y++){
+      for (let x = 0; x < w; x++){
+        const a = data[(y * w + x) * 4 + 3];
+        if (a > 10){
+          found = true;
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+    }
+    return found ? { minX, minY, maxX, maxY } : null;
+  }
+
+  objBtnRun.addEventListener('click', async () => {
+    objErrorBox.style.display = 'none';
+    if (!objImage) return;
+    if (!hasMaskContent()){
+      objErrorBox.textContent = 'Pintá sobre el objeto que querés borrar antes de continuar.';
+      objErrorBox.style.display = 'block';
+      return;
+    }
+
+    objStatusOverlay.classList.remove('hidden');
+    objStatusText.textContent = 'Cargando el modelo de IA (~200 MB la primera vez, puede tardar)…';
+    objBtnRun.disabled = true;
+
+    try {
+      const session = await getOrtSession();
+      objStatusText.textContent = 'Borrando…';
+
+      const fullW = objImage.naturalWidth;
+      const fullH = objImage.naturalHeight;
+
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width = fullW; fullCanvas.height = fullH;
+      const fullCtx = fullCanvas.getContext('2d');
+      fullCtx.drawImage(objImage, 0, 0, fullW, fullH);
+
+      const fullMaskCanvas = document.createElement('canvas');
+      fullMaskCanvas.width = fullW; fullMaskCanvas.height = fullH;
+      const fullMaskCtx = fullMaskCanvas.getContext('2d');
+      fullMaskCtx.drawImage(objMaskCanvas, 0, 0, fullW, fullH);
+
+      // Work only on a square crop around what was painted, at real resolution,
+      // instead of squeezing the whole photo into the model's fixed 512x512 input.
+      const bboxDisp = getMaskBBox(maskCtx, objMaskCanvas.width, objMaskCanvas.height);
+      const scaleX = fullW / objMaskCanvas.width;
+      const scaleY = fullH / objMaskCanvas.height;
+      const minX = bboxDisp.minX * scaleX, maxX = bboxDisp.maxX * scaleX;
+      const minY = bboxDisp.minY * scaleY, maxY = bboxDisp.maxY * scaleY;
+      const bboxW = maxX - minX, bboxH = maxY - minY;
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+
+      let side = Math.max(bboxW, bboxH) * 1.8;
+      side = Math.max(side, 220);
+      side = Math.min(side, Math.min(fullW, fullH));
+      let cropX = Math.round(Math.max(0, Math.min(cx - side / 2, fullW - side)));
+      let cropY = Math.round(Math.max(0, Math.min(cy - side / 2, fullH - side)));
+      side = Math.round(side);
+
+      const modelImgCanvas = document.createElement('canvas');
+      modelImgCanvas.width = 512; modelImgCanvas.height = 512;
+      modelImgCanvas.getContext('2d').drawImage(fullCanvas, cropX, cropY, side, side, 0, 0, 512, 512);
+      const imgData = modelImgCanvas.getContext('2d').getImageData(0, 0, 512, 512).data;
+
+      const modelMaskCanvas = document.createElement('canvas');
+      modelMaskCanvas.width = 512; modelMaskCanvas.height = 512;
+      const mmCtx = modelMaskCanvas.getContext('2d');
+      mmCtx.drawImage(fullMaskCanvas, cropX, cropY, side, side, 0, 0, 512, 512);
+      const maskData = mmCtx.getImageData(0, 0, 512, 512).data;
+
+      const plane = 512 * 512;
+      const imageFloat = new Float32Array(3 * plane);
+      const maskFloat = new Float32Array(plane);
+      for (let i = 0; i < plane; i++) {
+        const px = i * 4;
+        imageFloat[i] = imgData[px] / 255;
+        imageFloat[plane + i] = imgData[px + 1] / 255;
+        imageFloat[plane * 2 + i] = imgData[px + 2] / 255;
+        maskFloat[i] = maskData[px + 3] > 10 ? 1 : 0;
+      }
+
+      const imageTensor = new ort.Tensor('float32', imageFloat, [1, 3, 512, 512]);
+      const maskTensor = new ort.Tensor('float32', maskFloat, [1, 1, 512, 512]);
+
+      const feeds = { image: imageTensor, mask: maskTensor };
+      const results = await session.run(feeds);
+      const outTensor = results[session.outputNames[0]];
+      const outData = outTensor.data;
+
+      const outImgData = mmCtx.createImageData(512, 512);
+      for (let i = 0; i < plane; i++) {
+        const px = i * 4;
+        outImgData.data[px]     = Math.min(255, Math.max(0, outData[i]));
+        outImgData.data[px + 1] = Math.min(255, Math.max(0, outData[plane + i]));
+        outImgData.data[px + 2] = Math.min(255, Math.max(0, outData[plane * 2 + i]));
+        outImgData.data[px + 3] = 255;
+      }
+      const outCanvas512 = document.createElement('canvas');
+      outCanvas512.width = 512; outCanvas512.height = 512;
+      outCanvas512.getContext('2d').putImageData(outImgData, 0, 0);
+
+      // Scale the model's output back down to the crop's real size (not the full photo),
+      // so we're never stretching a tiny image across a huge photo.
+      const outCropCanvas = document.createElement('canvas');
+      outCropCanvas.width = side; outCropCanvas.height = side;
+      const outCropCtx = outCropCanvas.getContext('2d');
+      outCropCtx.imageSmoothingEnabled = true;
+      outCropCtx.drawImage(outCanvas512, 0, 0, side, side);
+
+      const featherCropCanvas = document.createElement('canvas');
+      featherCropCanvas.width = side; featherCropCanvas.height = side;
+      const featherCropCtx = featherCropCanvas.getContext('2d');
+      featherCropCtx.filter = 'blur(3px)';
+      featherCropCtx.drawImage(fullMaskCanvas, cropX, cropY, side, side, 0, 0, side, side);
+
+      outCropCtx.globalCompositeOperation = 'destination-in';
+      outCropCtx.filter = 'none';
+      outCropCtx.drawImage(featherCropCanvas, 0, 0);
+      outCropCtx.globalCompositeOperation = 'source-over';
+
+      const resultCanvas = document.createElement('canvas');
+      resultCanvas.width = fullW; resultCanvas.height = fullH;
+      const resultCtx = resultCanvas.getContext('2d');
+      resultCtx.drawImage(fullCanvas, 0, 0);
+      resultCtx.drawImage(outCropCanvas, cropX, cropY);
+
+      objCtx.clearRect(0, 0, objCanvas.width, objCanvas.height);
+      objCtx.drawImage(resultCanvas, 0, 0, objCanvas.width, objCanvas.height);
+      maskCtx.clearRect(0, 0, objMaskCanvas.width, objMaskCanvas.height);
+
+      const blob = await new Promise(res => resultCanvas.toBlob(res, 'image/png'));
+      objResultURL = URL.createObjectURL(blob);
+
+      objStatusOverlay.classList.add('hidden');
+      objBtnDownload.style.display = 'inline-block';
+    } catch (err) {
+      console.error(err);
+      objStatusOverlay.classList.add('hidden');
+      objErrorBox.textContent = 'Algo salió mal borrando el objeto. Probá pintar de nuevo o con otra foto.';
+      objErrorBox.style.display = 'block';
+    } finally {
+      objBtnRun.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
